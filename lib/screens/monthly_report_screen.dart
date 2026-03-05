@@ -91,9 +91,13 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       await file.writeAsBytes(await pdf.save());
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('PDF Exported: ${file.path}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Report generated: ${file.path}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.teal,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -106,16 +110,18 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Reports',
+          'Monthly Insights',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
             onPressed: () {
               final provider = Provider.of<ExpenseProvider>(
                 context,
@@ -128,8 +134,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                         e.date.month == _selectedMonth.month,
                   )
                   .toList();
-              final total = provider.monthlyExpensesTotal;
-              _exportPdf(monthlyExpenses, total, context);
+              _exportPdf(
+                monthlyExpenses,
+                provider.monthlyExpensesTotal,
+                context,
+              );
             },
           ),
         ],
@@ -156,53 +165,31 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
             prevMonth = 12;
             prevYear--;
           }
-          final prevMonthExpenses = provider.expenses
+          final totalPrevMonth = provider.expenses
               .where(
                 (e) => e.date.year == prevYear && e.date.month == prevMonth,
               )
-              .toList();
-          final totalPrevMonth = prevMonthExpenses.fold(
-            0.0,
-            (sum, e) => sum + e.amount,
-          );
+              .fold(0.0, (sum, e) => sum + e.amount);
 
-          String compareText;
-          if (totalPrevMonth == 0) {
-            compareText = "vs Last Month: N/A";
-          } else {
-            final diff = totalThisMonth - totalPrevMonth;
-            final percent = (diff.abs() / totalPrevMonth) * 100;
-            if (diff > 0) {
-              compareText = "vs Last Month: +${percent.toStringAsFixed(1)}%";
-            } else {
-              compareText = "vs Last Month: -${percent.toStringAsFixed(1)}%";
-            }
-          }
+          final diff = totalThisMonth - totalPrevMonth;
+          final percent = totalPrevMonth == 0
+              ? 0.0
+              : (diff.abs() / totalPrevMonth) * 100;
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      DateFormat.yMMMM().format(_selectedMonth),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: _showMonthPicker,
-                      icon: const Icon(Icons.calendar_month),
-                      label: const Text('Change'),
-                    ),
-                  ],
-                ),
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  theme.colorScheme.surface,
+                  theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                ],
               ),
-              Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                child: Padding(
+            ),
+            child: Column(
+              children: [
+                Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -210,60 +197,186 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Total Expenses',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          Text(
+                            DateFormat.yMMMM().format(_selectedMonth),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
-                            '₹${totalThisMonth.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSecondaryContainer,
+                            'Summary of your spending',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
                             ),
                           ),
                         ],
                       ),
-                      Text(
-                        compareText,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: totalThisMonth > totalPrevMonth
-                              ? Colors.red
-                              : Colors.green,
+                      TextButton.icon(
+                        onPressed: _showMonthPicker,
+                        icon: const Icon(Icons.calendar_month),
+                        label: const Text('Select Month'),
+                        style: TextButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary
+                              .withOpacity(0.1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: monthlyExpenses.isEmpty
-                    ? const Center(
-                        child: Text(
-                          "No expenses for this month.",
-                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                _buildInsightCard(context, totalThisMonth, diff, percent),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: monthlyExpenses.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 32),
+                          itemCount: monthlyExpenses.length,
+                          itemBuilder: (context, index) {
+                            return ExpenseCard(
+                              expense: monthlyExpenses[index],
+                              onDelete: () => provider.deleteExpense(
+                                monthlyExpenses[index].key,
+                              ),
+                            );
+                          },
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: monthlyExpenses.length,
-                        itemBuilder: (context, index) {
-                          return ExpenseCard(
-                            expense: monthlyExpenses[index],
-                            onDelete: () => provider.deleteExpense(
-                              monthlyExpenses[index].key,
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildInsightCard(
+    BuildContext context,
+    double total,
+    double diff,
+    double percent,
+  ) {
+    final theme = Theme.of(context);
+    final isIncrease = diff > 0;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total Monthly Spending',
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimary.withOpacity(0.7),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₹${total.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.analytics_outlined,
+                  color: theme.colorScheme.onPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isIncrease ? Icons.trending_up : Icons.trending_down,
+                  color: isIncrease ? Colors.orange : Colors.greenAccent,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  isIncrease
+                      ? 'Up by ${percent.toStringAsFixed(1)}%'
+                      : 'Down by ${percent.toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  ' from last month',
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimary.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Opacity(
+          opacity: 0.5,
+          child: Image.network(
+            'https://cdn-icons-png.flaticon.com/512/7486/7486744.png',
+            width: 100,
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.inbox, size: 64, color: Colors.grey),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          "No transactions found",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const Text(
+          "Try picking a different month",
+          style: TextStyle(color: Colors.grey),
+        ),
+      ],
     );
   }
 }

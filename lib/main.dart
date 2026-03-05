@@ -49,6 +49,7 @@ class DailyExpenseTrackerApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
+      debugShowCheckedModeBanner: false,
       home: const MainScreen(),
     );
   }
